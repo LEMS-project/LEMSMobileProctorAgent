@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">LEMS Mobile Proctor Agent</string>
+    <string name="filter_view_lems">Filter view lems schema</string>
+    <string name="btn_take_qrcode">Take picture of QR Code</string>
+    <string name="btn_retry_connection">Retry connection</string>
+    <string name="error_link_required">Please open this app using a proper QRCode.</string>
+    <string name="error_permission_required">Permission required to continue. Please restart app.</string>
+    <string name="error_connection">Error connecting the server.</string>
+    <string name="error_taking_pictures">Error taking pictures.</string>
+    <string name="txt_endpoint_connection">Connection to proctoring system…</string>
+    <string name="txt_taking_pictures">Taking pictures…</string>
+    <string name="ic_starting_desc">Starting…</string>
+    <string name="ic_connecting_desc">Connecting…</string>
+    <string name="ic_taking_picture_desc">Taking pictures…</string>
+    <string name="ic_error_desc">Error</string>
+
+</resources>
