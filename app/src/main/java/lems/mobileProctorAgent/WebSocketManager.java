@@ -31,6 +31,12 @@ public class WebSocketManager implements AutoCloseable {
         @Override
         public void call(Object... args) {
             Log.d(LOG_TAG, "Websocket disconnected");
+            for (Object arg : args) {
+                if (arg == null) {
+                    continue;
+                }
+                Log.d(LOG_TAG, "- arg: " + arg + " (class: " + arg.getClass().getName() + ")");
+            }
             if (onDisconnect != null) {
                 onDisconnect.accept(args);
             }

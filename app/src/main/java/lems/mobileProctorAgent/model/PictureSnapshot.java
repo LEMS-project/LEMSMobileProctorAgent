@@ -13,6 +13,7 @@ import com.google.gson.JsonSerializer;
 
 import java.lang.reflect.Type;
 import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -29,6 +30,12 @@ public class PictureSnapshot {
     public PictureSnapshot(CameraType source, Long timestamp, byte[] data) {
         this.source = source;
         this.timestamp = timestamp;
+        this.data = data;
+    }
+
+    public PictureSnapshot(CameraType source, byte[] data) {
+        this.source = source;
+        this.timestamp = (new Date()).getTime();
         this.data = data;
     }
 

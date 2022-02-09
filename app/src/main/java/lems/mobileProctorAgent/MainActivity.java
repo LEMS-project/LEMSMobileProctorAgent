@@ -145,6 +145,10 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             if (newState == MainActivityState.RUNNING) {
+                if (this.currentState == MainActivityState.RUNNING) {
+                    Log.i(LOG_TAG, "Ask to set state to RUNNING while already being in that state. do nothing");
+                    return;
+                }
                 if (this.currentState != MainActivityState.CONNECTING) {
                     throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
                 }
@@ -212,7 +216,14 @@ public class MainActivity extends AppCompatActivity {
             app.getCameraManager().setContext(this);
             app.getWebSocketManager().open(this.webSocketEndpoint, this.webSocketJwt, (Object... args) -> {
                 this.statCapturingPictures();
-            }, null, (Exception ex) -> {
+            }, (Object... args) -> {
+                final String disconnectionMsg = args.length > 0 && args[0] != null ? args.toString() : "unknown";
+                Log.w(LOG_TAG, "Disconnected from websocket: " + disconnectionMsg);
+                if (this.currentState == MainActivityState.RUNNING) {
+                    this.setState(MainActivityState.RUNNING_ERROR);
+                    this.printUIDebugInfo("Websocket disconnected:", disconnectionMsg);
+                }
+            }, (Exception ex) -> {
                 final String errorMsg = ex == null ? "unknown" : ex.getMessage();
                 Log.e(LOG_TAG, "Disconnected from websocket: " + errorMsg);
                 this.setState(MainActivityState.CONNECTION_ERROR);

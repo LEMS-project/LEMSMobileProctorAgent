@@ -1,6 +1,7 @@
 package lems.mobileProctorAgent;
 
 import android.util.Log;
+import android.util.Size;
 
 import androidx.activity.ComponentActivity;
 import androidx.annotation.NonNull;
@@ -132,7 +133,10 @@ public class CameraManager implements AutoCloseable, Runnable {
 
     private CameraSelector switchCameraSelector() {
         //Create new image capture
-        this.currentImageCapture = new ImageCapture.Builder().build();
+        this.currentImageCapture = new ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .setTargetResolution(new Size(AppConstants.EXPECTED_PICTURE_WIDTH, AppConstants.EXPECTED_PICTURE_HEIGHT))
+                .build();
         this.currentCameraType = this.currentCameraType == PictureSnapshot.CameraType.FRONT ? PictureSnapshot.CameraType.BACK : PictureSnapshot.CameraType.FRONT;
         return this.currentCameraType == PictureSnapshot.CameraType.FRONT ? CameraSelector.DEFAULT_FRONT_CAMERA : CameraSelector.DEFAULT_BACK_CAMERA;
     }
@@ -179,7 +183,7 @@ public class CameraManager implements AutoCloseable, Runnable {
                 final byte[] pictData = new byte[bb.remaining()];
                 bb.get(pictData);
                 Log.d(LOG_TAG, "Forge proof");
-                final PictureSnapshot proof = new PictureSnapshot(currentCameraType, image.getImageInfo().getTimestamp(), pictData);
+                final PictureSnapshot proof = new PictureSnapshot(currentCameraType, pictData);
                 if (pictureSnapshotConsumer == null) {
                     Log.i(LOG_TAG, "Picture handled: " + proof.toString());
                 } else {
