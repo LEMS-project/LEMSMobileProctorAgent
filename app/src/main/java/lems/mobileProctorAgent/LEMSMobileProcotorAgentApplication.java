@@ -33,9 +33,8 @@ public class LEMSMobileProcotorAgentApplication extends Application {
         return this.camMgr;
     }
 
-    @Override
-    public void onTerminate() {
-        Log.i(LOG_TAG, "Terminating app");
+    public void closeEverything() {
+        Log.i(LOG_TAG, "CLOSE Websocket AND Camera Manager");
         try {
             this.wsMgr.close();
         } catch (Exception ex) {
@@ -46,7 +45,12 @@ public class LEMSMobileProcotorAgentApplication extends Application {
         } catch (Exception ex) {
             Log.i(LOG_TAG, "Error while closing camera manager: " + ex.getMessage());
         }
-        super.onTerminate();
+    }
+
+    public void closeAndQuit() {
+        this.closeEverything();
+        Log.i(LOG_TAG, "QUIT Application");
         System.exit(0);
     }
+
 }

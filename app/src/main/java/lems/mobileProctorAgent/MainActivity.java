@@ -5,13 +5,13 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.MediaStore;
 import android.util.Log;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.content.res.AppCompatResources;
@@ -42,7 +42,7 @@ public class MainActivity extends AppCompatActivity {
         this.setContentView(R.layout.entrypoint);
         this.setState(MainActivityState.LAUNCHING);
         this.findViewById(R.id.btnTakeQRCode).setOnClickListener((v) -> {
-            this.takeQRCodePicture();
+            this.readQRCode();
         });
         this.findViewById(R.id.btnRetryConnection).setOnClickListener((v) -> {
             this.retryConnection();
@@ -50,11 +50,17 @@ public class MainActivity extends AppCompatActivity {
         if (!this.checkAndSetLemsUri()) {
             this.setState(MainActivityState.LAUNCH_ERROR_DATA);
         } else {
-            if (this.allPermissionsGranted()) {
-                this.startWatching();
-            } else {
-                ActivityCompat.requestPermissions(this, AppConstants.REQUIRED_PERMISSIONS, AppConstants.REQUEST_CODE_PERMISSIONS);
-            }
+            this.checkPermissionAndStartWatching();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // We close and quit if state is running
+        if (this.currentState == MainActivityState.RUNNING) {
+            LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+            app.closeAndQuit();
         }
     }
 
@@ -66,8 +72,12 @@ public class MainActivity extends AppCompatActivity {
         final Button btnRetryConnection = (Button) this.findViewById(R.id.btnRetryConnection);
 
         try {
+            if (newState == this.currentState) {
+                Log.i(LOG_TAG, "Ask to change to the same state " + this.currentState + ": do nothing");
+                return;
+            }
             if (newState == MainActivityState.LAUNCHING) {
-                if (this.currentState != null) {
+                if (this.currentState != null && this.currentState != MainActivityState.LAUNCH_ERROR_DATA) {
                     throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
                 }
                 this.runOnUiThread(() -> {
@@ -156,10 +166,6 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             if (newState == MainActivityState.RUNNING) {
-                if (this.currentState == MainActivityState.RUNNING) {
-                    Log.i(LOG_TAG, "Ask to set state to RUNNING while already being in that state. do nothing");
-                    return;
-                }
                 if (this.currentState != MainActivityState.CONNECTING) {
                     throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
                 }
@@ -221,6 +227,14 @@ public class MainActivity extends AppCompatActivity {
             txtDebugInfo.setText(message);
             txtDebugInfo.setVisibility(TextView.VISIBLE);
         });
+    }
+
+    private void checkPermissionAndStartWatching() {
+        if (this.allPermissionsGranted()) {
+            this.startWatching();
+        } else {
+            ActivityCompat.requestPermissions(this, AppConstants.REQUIRED_PERMISSIONS, AppConstants.REQUEST_CODE_PERMISSIONS);
+        }
     }
 
     private void startWatching() {
@@ -314,30 +328,46 @@ public class MainActivity extends AppCompatActivity {
         }
         Intent intent = this.getIntent();
         Uri data = intent.getData();
-        if (data == null) {
-            Log.i(LOG_TAG, "Missing launch data");
+        try {
+            this.setSocketInfoFromUri(data);
+            Log.d(LOG_TAG, "Launnch Data found. WebSocket is: " + this.webSocketEndpoint);
+            return true;
+        } catch (IllegalArgumentException ex) {
+            Log.i(LOG_TAG, ex.getMessage());
             return false;
         }
-        String urlEncodedEndpoint = data.getQueryParameter("endpoint");
-        String rawJwt = data.getQueryParameter("jwt");
+    }
+
+    private void setSocketInfoFromUri(Uri uri) {
+        if (uri == null) {
+            throw new IllegalArgumentException("Missing uri");
+        }
+        String urlEncodedEndpoint = uri.getQueryParameter("endpoint");
+        String rawJwt = uri.getQueryParameter("jwt");
         if (urlEncodedEndpoint == null || rawJwt == null) {
-            Log.i(LOG_TAG, "Missing launch data endpoint or jwt");
-            return false;
+            throw new IllegalArgumentException("Missing launch data endpoint or jwt");
         }
         this.webSocketEndpoint = Uri.decode(urlEncodedEndpoint);
         this.webSocketJwt = rawJwt;
-        Log.d(LOG_TAG, "Launnch Data found. WebSocket is: " + this.webSocketEndpoint);
-        return true;
     }
 
-    private void takeQRCodePicture() {
-        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+    private final ActivityResultLauncher<Void> qrCodeReaderlauncher = registerForActivityResult(new ReadQrCodeContract(), (uri) -> {
+        Log.i(LOG_TAG, "1st activity : received uri! : " + uri);
+        if (uri != null) {
+            this.setState(MainActivityState.LAUNCHING);
+            this.setSocketInfoFromUri(uri);
+            this.checkPermissionAndStartWatching();
+        }
+    });
+
+    private void readQRCode() {
         try {
-            startActivity(cameraIntent);
+            this.qrCodeReaderlauncher.launch(null);
         } catch (ActivityNotFoundException ex) {
-            Log.e(LOG_TAG, "Unable to start camera: " + ex.getMessage());
+            Log.e(LOG_TAG, "Unable to start reading QR code: " + ex.getMessage());
         }
     }
+
 
     private void retryConnection() {
         this.startWatching();

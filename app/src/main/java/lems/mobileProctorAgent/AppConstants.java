@@ -6,8 +6,8 @@ public interface AppConstants {
     int REQUEST_CODE_PERMISSIONS = 10;
     String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA, Manifest.permission.INTERNET};
 
-    int EXPECTED_PICTURE_WIDTH = 800;
-    int EXPECTED_PICTURE_HEIGHT = 1066;
+    int EXPECTED_PICTURE_WIDTH = 416;
+    int EXPECTED_PICTURE_HEIGHT = 416;
 
     boolean useWebSocketTestInfo = false;
     String testWebSocketEndpointDebug = "http://10.0.2.2:5000/mobile";
