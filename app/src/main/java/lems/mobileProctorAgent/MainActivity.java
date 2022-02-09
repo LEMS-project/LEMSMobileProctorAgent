@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.util.Log;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -76,6 +77,8 @@ public class MainActivity extends AppCompatActivity {
                     txtDebugInfo.setVisibility(TextView.INVISIBLE);
                     btnTakeQrCode.setVisibility(Button.GONE);
                     btnRetryConnection.setVisibility(Button.GONE);
+                    // Do not prevent screen off
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 });
                 this.currentState = MainActivityState.LAUNCHING;
                 return;
@@ -91,6 +94,8 @@ public class MainActivity extends AppCompatActivity {
                     txtDebugInfo.setVisibility(TextView.INVISIBLE);
                     btnTakeQrCode.setVisibility(Button.VISIBLE);
                     btnRetryConnection.setVisibility(Button.GONE);
+                    // Do not prevent screen off
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 });
                 this.currentState = MainActivityState.LAUNCH_ERROR_DATA;
                 return;
@@ -106,6 +111,8 @@ public class MainActivity extends AppCompatActivity {
                     txtDebugInfo.setVisibility(TextView.INVISIBLE);
                     btnTakeQrCode.setVisibility(Button.INVISIBLE);
                     btnRetryConnection.setVisibility(Button.GONE);
+                    // Do not prevent screen off
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 });
                 this.currentState = MainActivityState.LAUNCH_ERROR_PERMISSION;
                 return;
@@ -122,6 +129,8 @@ public class MainActivity extends AppCompatActivity {
                     txtDebugInfo.setVisibility(TextView.INVISIBLE);
                     btnTakeQrCode.setVisibility(Button.GONE);
                     btnRetryConnection.setVisibility(Button.GONE);
+                    // Prevent screen off
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 });
                 this.currentState = MainActivityState.CONNECTING;
                 return;
@@ -140,6 +149,8 @@ public class MainActivity extends AppCompatActivity {
                     txtDebugInfo.setVisibility(TextView.INVISIBLE);
                     btnTakeQrCode.setVisibility(Button.GONE);
                     btnRetryConnection.setVisibility(Button.VISIBLE);
+                    // Do not prevent screen off
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 });
                 this.currentState = MainActivityState.CONNECTION_ERROR;
                 return;
@@ -159,6 +170,8 @@ public class MainActivity extends AppCompatActivity {
                     txtDebugInfo.setVisibility(TextView.INVISIBLE);
                     btnTakeQrCode.setVisibility(Button.GONE);
                     btnRetryConnection.setVisibility(Button.GONE);
+                    // Prevent screen off
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 });
                 this.currentState = MainActivityState.RUNNING;
                 return;
@@ -175,6 +188,8 @@ public class MainActivity extends AppCompatActivity {
                     txtDebugInfo.setVisibility(TextView.INVISIBLE);
                     btnTakeQrCode.setVisibility(Button.GONE);
                     btnRetryConnection.setVisibility(Button.GONE);
+                    // Do not prevent screen off
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 });
                 this.currentState = MainActivityState.RUNNING_ERROR;
                 return;
