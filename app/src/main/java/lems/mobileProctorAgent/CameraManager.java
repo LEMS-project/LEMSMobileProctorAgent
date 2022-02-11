@@ -26,11 +26,15 @@ import lems.mobileProctorAgent.model.PictureSnapshot;
 public class CameraManager implements AutoCloseable, Runnable {
 
     public static final long DFLT_PICTURE_INTERVAL_MS = 3000;
+    public static final int DFLT_EXPECTED_PICTURE_WIDTH = 416;
+    public static final int DFLT_EXPECTED_PICTURE_HEIGHT = 416;
     private final static String LOG_TAG = CameraManager.class.getName();
 
     private final ScheduledExecutorService executorService;
     private final Consumer<PictureSnapshot> pictureSnapshotConsumer;
     private final long pictureIntervalMs;
+    private final int expectedPictureWidth;
+    private final int expectedPictureHeight;
     private ComponentActivity context;
     private volatile ScheduledFuture<?> pendingTask;
     private PictureSnapshot.CameraType currentCameraType = PictureSnapshot.CameraType.FRONT;
@@ -40,12 +44,17 @@ public class CameraManager implements AutoCloseable, Runnable {
         this.executorService = executorService;
         this.pictureSnapshotConsumer = pictureSnapshotConsumer;
         this.pictureIntervalMs = DFLT_PICTURE_INTERVAL_MS;
+        this.expectedPictureWidth = DFLT_EXPECTED_PICTURE_WIDTH;
+        this.expectedPictureHeight = DFLT_EXPECTED_PICTURE_HEIGHT;
     }
 
-    public CameraManager(ScheduledExecutorService executorService, Consumer<PictureSnapshot> pictureSnapshotConsumer, long pictureIntervalMs) {
+    public CameraManager(ScheduledExecutorService executorService, Consumer<PictureSnapshot> pictureSnapshotConsumer,
+                         long pictureIntervalMs, int expectedPictureWidth, int expectedPictureHeight) {
         this.executorService = executorService;
         this.pictureSnapshotConsumer = pictureSnapshotConsumer;
         this.pictureIntervalMs = pictureIntervalMs;
+        this.expectedPictureWidth = expectedPictureWidth;
+        this.expectedPictureHeight = expectedPictureHeight;
     }
 
     public ComponentActivity getContext() {
@@ -135,7 +144,7 @@ public class CameraManager implements AutoCloseable, Runnable {
         //Create new image capture
         this.currentImageCapture = new ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetResolution(new Size(AppConstants.EXPECTED_PICTURE_WIDTH, AppConstants.EXPECTED_PICTURE_HEIGHT))
+                .setTargetResolution(new Size(this.expectedPictureWidth, this.expectedPictureHeight))
                 .build();
         this.currentCameraType = this.currentCameraType == PictureSnapshot.CameraType.FRONT ? PictureSnapshot.CameraType.BACK : PictureSnapshot.CameraType.FRONT;
         return this.currentCameraType == PictureSnapshot.CameraType.FRONT ? CameraSelector.DEFAULT_FRONT_CAMERA : CameraSelector.DEFAULT_BACK_CAMERA;

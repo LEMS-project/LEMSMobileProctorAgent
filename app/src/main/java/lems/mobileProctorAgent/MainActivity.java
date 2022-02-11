@@ -134,7 +134,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 this.runOnUiThread(() -> {
                     iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), R.drawable.ic_connecting));
-                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_connecting_desc));
+                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_connecting_desc) + this.webSocketEndpoint);
                     txtMainInfo.setText(this.getString(R.string.ic_connecting_desc));
                     txtDebugInfo.setVisibility(TextView.INVISIBLE);
                     btnTakeQrCode.setVisibility(Button.GONE);

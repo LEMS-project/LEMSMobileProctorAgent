@@ -6,6 +6,7 @@ public interface AppConstants {
     int REQUEST_CODE_PERMISSIONS = 10;
     String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA, Manifest.permission.INTERNET};
 
+    int PICTURE_INTERVAL_MS = 1000;
     int EXPECTED_PICTURE_WIDTH = 416;
     int EXPECTED_PICTURE_HEIGHT = 416;
 

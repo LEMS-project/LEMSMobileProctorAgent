@@ -10,7 +10,7 @@
     <string name="txt_endpoint_connection">Connection to proctoring system…</string>
     <string name="txt_taking_pictures">Taking pictures…</string>
     <string name="ic_starting_desc">Starting…</string>
-    <string name="ic_connecting_desc">Connecting…</string>
+    <string name="ic_connecting_desc">Connecting to </string>
     <string name="ic_taking_picture_desc">Taking pictures…</string>
     <string name="ic_error_desc">Error</string>
 

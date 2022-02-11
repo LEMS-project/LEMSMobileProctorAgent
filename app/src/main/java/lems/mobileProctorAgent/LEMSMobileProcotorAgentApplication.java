@@ -18,7 +18,7 @@ public class LEMSMobileProcotorAgentApplication extends Application {
         this.wsMgr = new WebSocketManager();
         this.camMgr = new CameraManager(this.executorService, (pictureSnapshot) -> {
             this.wsMgr.sendPictureSnapshot(pictureSnapshot);
-        });
+        }, AppConstants.PICTURE_INTERVAL_MS, AppConstants.EXPECTED_PICTURE_WIDTH, AppConstants.EXPECTED_PICTURE_HEIGHT);
     }
 
     public ScheduledExecutorService getExecutorService() {
