@@ -1,4 +1,4 @@
-package lems.mobileProctorAgent;
+package lems.mobileProctorAgent.camera;
 
 import android.util.Log;
 import android.util.Size;
@@ -17,87 +17,29 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import lems.mobileProctorAgent.model.PictureSnapshot;
 
-public class CameraManager implements AutoCloseable, Runnable {
-
-    public static final long DFLT_PICTURE_INTERVAL_MS = 3000;
-    public static final int DFLT_EXPECTED_PICTURE_WIDTH = 416;
-    public static final int DFLT_EXPECTED_PICTURE_HEIGHT = 416;
-    private final static String LOG_TAG = CameraManager.class.getName();
+public class TwoFacesPictureTaker implements Runnable{
+    private final static String LOG_TAG = TwoFacesPictureTaker.class.getName();
 
     private final ScheduledExecutorService executorService;
     private final Consumer<PictureSnapshot> pictureSnapshotConsumer;
-    private final long pictureIntervalMs;
+    private final ComponentActivity context;
     private final int expectedPictureWidth;
     private final int expectedPictureHeight;
-    private ComponentActivity context;
-    private volatile ScheduledFuture<?> pendingTask;
     private PictureSnapshot.CameraType currentCameraType = PictureSnapshot.CameraType.FRONT;
     private ImageCapture currentImageCapture;
 
-    public CameraManager(ScheduledExecutorService executorService, Consumer<PictureSnapshot> pictureSnapshotConsumer) {
+    public TwoFacesPictureTaker(ScheduledExecutorService executorService,
+                                Consumer<PictureSnapshot> pictureSnapshotConsumer, ComponentActivity context,
+                                int expectedPictureWidth, int expectedPictureHeight) {
         this.executorService = executorService;
         this.pictureSnapshotConsumer = pictureSnapshotConsumer;
-        this.pictureIntervalMs = DFLT_PICTURE_INTERVAL_MS;
-        this.expectedPictureWidth = DFLT_EXPECTED_PICTURE_WIDTH;
-        this.expectedPictureHeight = DFLT_EXPECTED_PICTURE_HEIGHT;
-    }
-
-    public CameraManager(ScheduledExecutorService executorService, Consumer<PictureSnapshot> pictureSnapshotConsumer,
-                         long pictureIntervalMs, int expectedPictureWidth, int expectedPictureHeight) {
-        this.executorService = executorService;
-        this.pictureSnapshotConsumer = pictureSnapshotConsumer;
-        this.pictureIntervalMs = pictureIntervalMs;
+        this.context = context;
         this.expectedPictureWidth = expectedPictureWidth;
         this.expectedPictureHeight = expectedPictureHeight;
-    }
-
-    public ComponentActivity getContext() {
-        return this.context;
-    }
-
-    public void setContext(ComponentActivity context) {
-        this.context = context;
-    }
-
-    public synchronized void open() {
-        if (this.isOpened()) {
-            return;
-        }
-        Log.i(LOG_TAG, "Opening picture manager");
-        this.prepareCameras();
-        Log.d(LOG_TAG, "Setup taks in executor");
-        this.pendingTask = this.executorService.scheduleWithFixedDelay(this,
-                0L, this.pictureIntervalMs, TimeUnit.MILLISECONDS);
-    }
-
-    public boolean isOpened() {
-        return this.pendingTask != null
-                && !this.pendingTask.isDone()
-                && !this.pendingTask.isCancelled();
-    }
-
-    public synchronized void close() throws Exception {
-        Log.d(LOG_TAG, "Closing camera manager");
-        if (this.isOpened()) {
-            Log.d(LOG_TAG, "Shutdown pending task");
-            this.pendingTask.cancel(true);
-            Log.d(LOG_TAG, "Wait for task termination");
-            try {
-                this.pendingTask.get(3L, TimeUnit.SECONDS);
-            } catch (InterruptedException ex) {
-                Log.d(LOG_TAG, "interruption while waiting for task to achieve", ex);
-            }
-            Log.d(LOG_TAG, "Stopping cameras");
-            this.releaseCameras();
-            this.pendingTask = null;
-        }
-
     }
 
     @Override
@@ -110,34 +52,19 @@ public class CameraManager implements AutoCloseable, Runnable {
             synchronized (this) {
                 this.wait(3000L);
             }
-            if (Thread.interrupted()) {
-                return;
+            if (!Thread.interrupted()) {
+                Log.d(LOG_TAG, "Camera manager run waken up, take picture");
+                this.currentImageCapture.takePicture(this.executorService, new TwoFacesPictureTaker.PictureTakenCallback());
+                Log.d(LOG_TAG, "Wait after having taken picture");
+                synchronized (this) {
+                    this.wait(500L);
+                }
+                Log.d(LOG_TAG, "Camera manager run waken up, end");
             }
-            Log.d(LOG_TAG, "Camera manager run waken up, take picture");
-            this.takePicture(new PictureTakenCallback());
-            Log.d(LOG_TAG, "Wait after having taken picture");
-            synchronized (this) {
-                this.wait(500L);
-            }
-            Log.d(LOG_TAG, "Camera manager run waken up, end");
         } catch (InterruptedException ex) {
             Log.d(LOG_TAG, "interruption or execution ex while waiting", ex);
         }
-    }
-
-    private void prepareCameras() {
-
-    }
-
-    private void releaseCameras() {
-        Log.i(LOG_TAG, "Unbind all camera use cases");
-        final ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this.context);
-        try {
-            final ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-            cameraProvider.unbindAll();
-        } catch (InterruptedException | ExecutionException ex) {
-            Log.w(LOG_TAG, "interruption or execution ex while accessing camer", ex);
-        }
+        Log.d(LOG_TAG, "End of cameraManager run.");
     }
 
     private CameraSelector switchCameraSelector() {
@@ -171,11 +98,6 @@ public class CameraManager implements AutoCloseable, Runnable {
         }, ContextCompat.getMainExecutor(this.context));
     }
 
-    private void takePicture(PictureTakenCallback callback) {
-        this.currentImageCapture.takePicture(this.executorService, callback);
-    }
-
-
     public class PictureTakenCallback extends ImageCapture.OnImageCapturedCallback {
 
         @Override
@@ -186,16 +108,14 @@ public class CameraManager implements AutoCloseable, Runnable {
                 if (image.getPlanes().length == 0) {
                     Log.w(LOG_TAG, "Image captured without planes");
                 }
-                Log.d(LOG_TAG, "Retrieve buffer");
+                // Retrieve buffer
                 ByteBuffer bb = image.getPlanes()[0].getBuffer();
-                Log.d(LOG_TAG, "Retrieve buffer data as array");
+                // Retrieve buffer data as array
                 final byte[] pictData = new byte[bb.remaining()];
                 bb.get(pictData);
-                Log.d(LOG_TAG, "Forge proof");
+                // Forge proof
                 final PictureSnapshot proof = new PictureSnapshot(currentCameraType, pictData);
-                if (pictureSnapshotConsumer == null) {
-                    Log.i(LOG_TAG, "Picture handled: " + proof.toString());
-                } else {
+                if (pictureSnapshotConsumer != null) {
                     pictureSnapshotConsumer.accept(proof);
                 }
             } catch (Throwable ex) {
@@ -203,8 +123,8 @@ public class CameraManager implements AutoCloseable, Runnable {
             } finally {
                 image.close();
                 Log.d(LOG_TAG, "Wake up");
-                synchronized (PictureTakenCallback.this) {
-                    PictureTakenCallback.this.notifyAll();
+                synchronized (TwoFacesPictureTaker.PictureTakenCallback.this) {
+                    TwoFacesPictureTaker.PictureTakenCallback.this.notifyAll();
                 }
             }
         }

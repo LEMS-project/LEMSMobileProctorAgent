@@ -1,9 +1,8 @@
-package lems.mobileProctorAgent;
+package lems.mobileProctorAgent.qrcodeReader;
 
 import androidx.annotation.GuardedBy;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.Preview;
@@ -13,7 +12,6 @@ import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LifecycleOwner;
 
 import android.annotation.SuppressLint;
-import android.content.Intent;
 import android.media.Image;
 import android.net.Uri;
 import android.os.Bundle;
@@ -31,6 +29,10 @@ import com.google.mlkit.vision.common.InputImage;
 
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+
+import lems.mobileProctorAgent.AppConstants;
+import lems.mobileProctorAgent.LEMSMobileProcotorAgentApplication;
+import lems.mobileProctorAgent.R;
 
 public class QRCodeReaderActivity extends AppCompatActivity {
     private final static String LOG_TAG = QRCodeReaderActivity.class.getName();
@@ -52,6 +54,11 @@ public class QRCodeReaderActivity extends AppCompatActivity {
         setContentView(R.layout.activity_qrcode_reader);
         // Prevent screen off
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        // Check if no testing data have been provided
+        if (this.endActivityOnTestInfo()) {
+            return;
+        }
 
         // Get CameraProvide
         this.cameraProviderFuture = ProcessCameraProvider.getInstance(this);
@@ -91,6 +98,22 @@ public class QRCodeReaderActivity extends AppCompatActivity {
                 // This should never be reached.
             }
         }, ContextCompat.getMainExecutor(this));
+    }
+
+    private boolean endActivityOnTestInfo() {
+        if (AppConstants.useWebSocketTestInfo) {
+            // Forge test uri
+            final String wsEndpoint = AppConstants.testWebSocketEndpointDebug;
+            final String wsJWT = AppConstants.testWebSocketJWT;
+            Uri uri = Uri.parse(String.format("lems://proctoring?endpoint=%s&jwt=%s", wsEndpoint, wsJWT));
+            Log.d(LOG_TAG, "Launch Data WS test found. WebSocket is: " + wsEndpoint);
+            setResult(RESULT_OK, ReadQrCodeContract.createReturnedIntent(uri));
+            Log.i(LOG_TAG, "Intent set as result. Finish");
+            this.finish();
+            return true;
+        } else {
+            return false;
+        }
     }
 
     @Override

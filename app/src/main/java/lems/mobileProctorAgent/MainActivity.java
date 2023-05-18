@@ -1,5 +1,12 @@
 package lems.mobileProctorAgent;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.content.res.AppCompatResources;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -11,371 +18,365 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.content.res.AppCompatResources;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
 import java.util.Locale;
-import java.util.Objects;
 
+import lems.mobileProctorAgent.bluetooth.BTLEControllerContract;
+import lems.mobileProctorAgent.bluetooth.BluetoothManagerListener;
+import lems.mobileProctorAgent.model.ControlOrder;
 import lems.mobileProctorAgent.model.PictureSnapshot;
+import lems.mobileProctorAgent.model.WebSocketEventTypes;
+import lems.mobileProctorAgent.qrcodeReader.ReadQrCodeContract;
+import lems.mobileProctorAgent.websocket.DeviceControlListener;
+import lems.mobileProctorAgent.websocket.WebsocketListener;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements BluetoothManagerListener, WebsocketListener {
     private final static String LOG_TAG = MainActivity.class.getName();
 
-    private enum MainActivityState {
-        LAUNCHING, CONNECTING, RUNNING, LAUNCH_ERROR_DATA, LAUNCH_ERROR_PERMISSION, CONNECTION_ERROR, RUNNING_ERROR
-    }
-
-    private MainActivityState currentState;
-    private String webSocketEndpoint;
-    private String webSocketJwt;
-    private WSDataSentInfo dataSentInfo;
-
+    private boolean cameraAllowed;
+    private boolean onError;
+    private String debugMessages;
+    private MainActivity.WSDataSentInfo dataSentInfo;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        this.setContentView(R.layout.entrypoint);
-        this.setState(MainActivityState.LAUNCHING);
-        this.findViewById(R.id.btnTakeQRCode).setOnClickListener((v) -> {
-            this.readQRCode();
+        setContentView(R.layout.activity_main);
+        this.dataSentInfo = new MainActivity.WSDataSentInfo();
+        // Init main components
+        this.findViewById(R.id.qrCodeControl).setOnClickListener((v) -> {
+            try {
+                this.qrCodeReaderlauncher.launch(null);
+            } catch (ActivityNotFoundException ex) {
+                Log.e(LOG_TAG, "Unable to start reading QR code: " + ex.getMessage());
+            }
         });
-        this.findViewById(R.id.btnRetryConnection).setOnClickListener((v) -> {
-            this.retryConnection();
+        this.findViewById(R.id.connectControl).setOnClickListener((v) -> {
+            this.startWatching();
         });
-        if (!this.checkAndSetLemsUri()) {
-            this.setState(MainActivityState.LAUNCH_ERROR_DATA);
-        } else {
-            this.checkPermissionAndStartWatching();
+        this.findViewById(R.id.btSelectControl).setOnClickListener((v) -> {
+            try {
+                this.btControllerSelectionLauncher.launch(null);
+            } catch (ActivityNotFoundException ex) {
+                Log.e(LOG_TAG, "Unable to start selecting BT controller: " + ex.getMessage());
+            }
+        });
+        // Attempt to retrieve socket info from intent
+        Intent intent = this.getIntent();
+        Uri data = intent.getData();
+        try {
+            this.setSocketInfoFromUri(data);
+            Log.d(LOG_TAG, "Launch Data found.");
+        } catch (IllegalArgumentException ex) {
+            Log.i(LOG_TAG, ex.getMessage());
         }
+        // Check permission if not set
+        if (!this.cameraAllowed) {
+            this.checkPermissions();
+        }
+        // Render from state
+        this.renderFromState();
     }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Set itself as a listener of websocket and device control listener
+        LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+        app.getWebSocketManager().addWebsocketListener(this);
+        app.getBluetoothCtrlMgr().addManagerListener(this);
+        // Check permission if not set
+        if (!this.cameraAllowed) {
+            this.checkPermissions();
+        }
+        // Render from state
+        this.renderFromState();
+    }
+
+
 
     @Override
     protected void onStop() {
         super.onStop();
-        // We close and quit if state is running
-        if (this.currentState == MainActivityState.RUNNING) {
-            LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
-            app.closeAndQuit();
-        }
+        //LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+        //app.closeAndQuit();
     }
 
-    private void setState(MainActivityState newState) {
-        final ImageView iconEntrypoint = (ImageView) this.findViewById(R.id.iconEntrypoint);
-        final TextView txtMainInfo = (TextView) this.findViewById(R.id.txtMainInfo);
-        final TextView txtDebugInfo = (TextView) this.findViewById(R.id.txtDebugInfo);
-        final Button btnTakeQrCode = (Button) this.findViewById(R.id.btnTakeQRCode);
-        final Button btnRetryConnection = (Button) this.findViewById(R.id.btnRetryConnection);
+    private void renderFromState() {
+        //From the state compute different UI
+        //UI components: icon, txtMainInfo (content), txtDebug (content and visibility), button enable
+        final LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+        this.runOnUiThread(() -> {
+            // Updated UI components
+            final ImageView iconEntrypoint = (ImageView) this.findViewById(R.id.iconControl);
+            final TextView txtMainInfo = (TextView) this.findViewById(R.id.infoControl);
+            final TextView txtBtDevice = (TextView) this.findViewById(R.id.btDeviceControl);
+            final TextView txtDebugInfo = (TextView) this.findViewById(R.id.debugInfoControl);
+            final Button btnSelectBTController = (Button) this.findViewById(R.id.btSelectControl);
+            final Button btnTakeQrCode = (Button) this.findViewById(R.id.qrCodeControl);
+            final Button btnConnect = (Button) this.findViewById(R.id.connectControl);
 
-        try {
-            if (newState == this.currentState) {
-                Log.i(LOG_TAG, "Ask to change to the same state " + this.currentState + ": do nothing");
-                return;
-            }
-            if (newState == MainActivityState.LAUNCHING) {
-                if (this.currentState != null && this.currentState != MainActivityState.LAUNCH_ERROR_DATA) {
-                    throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
-                }
-                this.runOnUiThread(() -> {
-                    iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), R.drawable.ic_starting));
-                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_starting_desc));
-                    txtMainInfo.setText(this.getString(R.string.ic_starting_desc));
-                    txtDebugInfo.setVisibility(TextView.INVISIBLE);
-                    btnTakeQrCode.setVisibility(Button.GONE);
-                    btnRetryConnection.setVisibility(Button.GONE);
-                    // Do not prevent screen off
-                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                });
-                this.currentState = MainActivityState.LAUNCHING;
-                return;
-            }
-            if (newState == MainActivityState.LAUNCH_ERROR_DATA) {
-                if (this.currentState != MainActivityState.LAUNCHING) {
-                    throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
-                }
-                this.runOnUiThread(() -> {
-                    iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), R.drawable.ic_error));
-                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_error_desc));
-                    txtMainInfo.setText(this.getString(R.string.error_link_required));
-                    txtDebugInfo.setVisibility(TextView.INVISIBLE);
-                    btnTakeQrCode.setVisibility(Button.VISIBLE);
-                    btnRetryConnection.setVisibility(Button.GONE);
-                    // Do not prevent screen off
-                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                });
-                this.currentState = MainActivityState.LAUNCH_ERROR_DATA;
-                return;
-            }
-            if (newState == MainActivityState.LAUNCH_ERROR_PERMISSION) {
-                if (this.currentState != MainActivityState.LAUNCHING) {
-                    throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
-                }
-                this.runOnUiThread(() -> {
-                    iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), R.drawable.ic_error));
-                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_error_desc));
-                    txtMainInfo.setText(this.getString(R.string.error_permission_required));
-                    txtDebugInfo.setVisibility(TextView.INVISIBLE);
-                    btnTakeQrCode.setVisibility(Button.INVISIBLE);
-                    btnRetryConnection.setVisibility(Button.GONE);
-                    // Do not prevent screen off
-                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                });
-                this.currentState = MainActivityState.LAUNCH_ERROR_PERMISSION;
-                return;
-            }
-            if (newState == MainActivityState.CONNECTING) {
-                if (this.currentState != MainActivityState.LAUNCHING
-                        && this.currentState != MainActivityState.CONNECTION_ERROR) {
-                    throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
-                }
-                this.runOnUiThread(() -> {
-                    iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), R.drawable.ic_connecting));
-                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_connecting_desc) + this.webSocketEndpoint);
-                    txtMainInfo.setText(this.getString(R.string.ic_connecting_desc));
-                    txtDebugInfo.setVisibility(TextView.INVISIBLE);
-                    btnTakeQrCode.setVisibility(Button.GONE);
-                    btnRetryConnection.setVisibility(Button.GONE);
-                    // Prevent screen off
-                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                });
-                this.currentState = MainActivityState.CONNECTING;
-                return;
-            }
-            if (newState == MainActivityState.CONNECTION_ERROR) {
-                if (this.currentState != MainActivityState.CONNECTING
-                        && this.currentState != MainActivityState.CONNECTION_ERROR
-                        && this.currentState != MainActivityState.RUNNING
-                        && this.currentState != MainActivityState.RUNNING_ERROR) {
-                    throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
-                }
-                this.runOnUiThread(() -> {
-                    iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), R.drawable.ic_error));
-                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_error_desc));
-                    txtMainInfo.setText(this.getString(R.string.error_connection));
-                    txtDebugInfo.setVisibility(TextView.INVISIBLE);
-                    btnTakeQrCode.setVisibility(Button.GONE);
-                    btnRetryConnection.setVisibility(Button.VISIBLE);
-                    // Do not prevent screen off
-                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                });
-                this.currentState = MainActivityState.CONNECTION_ERROR;
-                return;
-            }
-            if (newState == MainActivityState.RUNNING) {
-                if (this.currentState != MainActivityState.CONNECTING) {
-                    throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
-                }
-                this.runOnUiThread(() -> {
-                    iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), R.drawable.ic_taking_picture));
-                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_taking_picture_desc));
-                    txtMainInfo.setText(this.getString(R.string.ic_taking_picture_desc));
-                    txtDebugInfo.setVisibility(TextView.INVISIBLE);
-                    btnTakeQrCode.setVisibility(Button.GONE);
-                    btnRetryConnection.setVisibility(Button.GONE);
-                    // Prevent screen off
-                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                });
-                this.currentState = MainActivityState.RUNNING;
-                return;
-            }
-            if (newState == MainActivityState.RUNNING_ERROR) {
-                if (this.currentState != MainActivityState.RUNNING
-                        && this.currentState != MainActivityState.CONNECTION_ERROR) {
-                    throw new IllegalStateException(String.format("Unable to switch to state %s from state %s.", newState, this.currentState));
-                }
-                this.runOnUiThread(() -> {
-                    iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), R.drawable.ic_error));
-                    iconEntrypoint.setContentDescription(this.getString(R.string.ic_error_desc));
-                    txtMainInfo.setText(this.getString(R.string.error_taking_pictures));
-                    txtDebugInfo.setVisibility(TextView.INVISIBLE);
-                    btnTakeQrCode.setVisibility(Button.GONE);
-                    btnRetryConnection.setVisibility(Button.GONE);
-                    // Do not prevent screen off
-                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                });
-                this.currentState = MainActivityState.RUNNING_ERROR;
-                return;
-            }
-            throw new IllegalStateException("Unmanaged activity state: " + Objects.toString(newState));
-        } catch (IllegalStateException ex) {
-            Log.wtf(LOG_TAG, ex.getMessage());
-            this.finish();
-        }
-    }
+            // Service states
+            final boolean controlled = app.getBluetoothCtrlMgr().isControlled();
+            final boolean websocketConnected = app.getWebSocketManager().isOpened();
+            final boolean websocketConnecting = app.getWebSocketManager().isConnecting();
 
-    private void printUIDebugInfo(Object... messages) {
-        final TextView txtDebugInfo = (TextView) this.findViewById(R.id.txtDebugInfo);
-        if (messages.length == 0) {
-            this.runOnUiThread(() -> {
+            // Icon and text info
+            int icon = R.drawable.ic_starting;
+            String mainInfo = this.getString(R.string.ic_starting_desc);
+            if (this.onError) {
+                icon = R.drawable.ic_error;
+                mainInfo = this.getString(R.string.error_connection);
+            } else if (!this.cameraAllowed) {
+                icon = R.drawable.ic_error;
+                mainInfo = this.getString(R.string.error_permission_required);
+            }  else if (websocketConnecting) {
+                icon = R.drawable.ic_connecting;
+                mainInfo = this.getString(R.string.ic_connecting_desc) + app.getWebSocketManager().getEndpoint();
+            } else if (websocketConnected) {
+                icon = R.drawable.ic_connecting;
+                mainInfo = this.getString(R.string.ic_connected_desc) + app.getWebSocketManager().getEndpoint();
+            } else if (controlled) {
+                icon = R.drawable.ic_control;
+                mainInfo = this.getString(R.string.ic_controlled_desc);
+            } else if (app.getCameraManager().isOpened()) {
+                icon = R.drawable.ic_taking_picture;
+                mainInfo = this.getString(R.string.ic_taking_picture_desc);
+            }
+            iconEntrypoint.setImageDrawable(AppCompatResources.getDrawable(this.getApplicationContext(), icon));
+            iconEntrypoint.setContentDescription(mainInfo);
+            txtMainInfo.setText(mainInfo);
+
+            // Bt device control info
+            if (app.getBluetoothCtrlMgr().isOpened()) {
+                txtBtDevice.setText(this.getString(R.string.btinfo_prefix, app.getBluetoothCtrlMgr().getBluetoothDeviceName()));
+                txtBtDevice.setVisibility(TextView.VISIBLE);
+            } else {
+                txtBtDevice.setVisibility(TextView.INVISIBLE);
+            }
+
+            // Buttons enabling
+            btnSelectBTController.setVisibility(!app.getCameraManager().isOpened() && !controlled ? Button.VISIBLE : Button.GONE);
+            btnTakeQrCode.setVisibility(!websocketConnected && !websocketConnecting ? Button.VISIBLE : Button.GONE);
+            btnConnect.setVisibility(websocketConnected && !app.getCameraManager().isOpened() && !controlled ? Button.VISIBLE : Button.GONE);
+
+            // Debug Text
+            if (this.debugMessages == null || this.debugMessages.isEmpty()) {
                 txtDebugInfo.setText("");
                 txtDebugInfo.setVisibility(TextView.INVISIBLE);
-            });
-            return;
+            } else {
+                txtDebugInfo.setText(this.debugMessages);
+                txtDebugInfo.setVisibility(TextView.INVISIBLE);
+            }
+
+            // Screen off prevention : wen cameraManager opened or controlled
+            if (app.getCameraManager().isOpened() || controlled) {
+                this.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } else {
+                this.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        });
+    }
+
+    private void startWatching() {
+        this.dataSentInfo = new MainActivity.WSDataSentInfo();
+        LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+        // Precondition: websocket is connected, permission ok
+        if (!this.cameraAllowed || !app.getWebSocketManager().isOpened()) {
+            Log.i(LOG_TAG, "Cannot start watching, either camera not allowed or ws not connected");
         }
+        app.getCameraManager().setContext(this);
+        try {
+            this.onError = false;
+            app.getCameraManager().open();
+            this.setDebugMessages();
+        } catch (Exception ex) {
+            this.onError = true;
+            Log.e(LOG_TAG, "Error taking picture: " + ex.getMessage());
+            this.setDebugMessages("Error starting taking picture: " + ex.getMessage());
+        }
+        this.renderFromState();
+    }
+
+    private void stopWatching() {
+        LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+        try {
+            app.getCameraManager().close();
+            this.setDebugMessages();
+        } catch (Exception ex) {
+            this.onError = true;
+            Log.e(LOG_TAG, "Error Starting controlling: " + ex.getMessage() + " (" + ex.getClass().getName() + ")");
+            this.setDebugMessages("Error starting taking picture: " + ex.getMessage());
+        }
+        this.renderFromState();
+    }
+
+    private void setDebugMessages(Object... messages) {
+        this.debugMessages = null;
         final StringBuilder strBuilder = new StringBuilder();
         for (Object message : messages) {
             if (message != null) {
                 strBuilder.append(message.toString()).append(System.lineSeparator());
             }
         }
-        final String message = strBuilder.toString().trim();
-        this.runOnUiThread(() -> {
-            txtDebugInfo.setText(message);
-            txtDebugInfo.setVisibility(TextView.VISIBLE);
-        });
+        this.debugMessages = strBuilder.toString().trim();
     }
 
-    private void checkPermissionAndStartWatching() {
-        if (this.allPermissionsGranted()) {
-            this.startWatching();
-        } else {
-            ActivityCompat.requestPermissions(this, AppConstants.REQUIRED_PERMISSIONS, AppConstants.REQUEST_CODE_PERMISSIONS);
+    private final ActivityResultLauncher<Void> qrCodeReaderlauncher = registerForActivityResult(new ReadQrCodeContract(), (uri) -> {
+        Log.i(LOG_TAG, "1st activity : received uri! : " + uri);
+        if (uri != null) {
+            this.setSocketInfoFromUri(uri);
+            this.renderFromState();
         }
-    }
+    });
 
-    private void startWatching() {
-        this.setState(MainActivityState.CONNECTING);
-        LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
-        try {
-            this.dataSentInfo = new WSDataSentInfo();
-            app.getCameraManager().setContext(this);
-            app.getWebSocketManager().open(this.webSocketEndpoint, this.webSocketJwt, (Object... args) -> {
-                this.statCapturingPictures();
-            }, (Object... args) -> {
-                final String disconnectionMsg = args.length > 0 && args[0] != null ? args.toString() : "unknown";
-                Log.w(LOG_TAG, "Disconnected from websocket: " + disconnectionMsg);
-                if (this.currentState == MainActivityState.RUNNING) {
-                    this.setState(MainActivityState.RUNNING_ERROR);
-                    this.printUIDebugInfo("Websocket disconnected:", disconnectionMsg);
-                }
-            }, (Exception ex) -> {
-                final String errorMsg = ex == null ? "unknown" : ex.getMessage();
-                Log.e(LOG_TAG, "Disconnected from websocket: " + errorMsg);
-                this.setState(MainActivityState.CONNECTION_ERROR);
-                this.printUIDebugInfo("Websocket error:", errorMsg);
-            }, (Object dataSent) -> {
-                this.handleDataSent(dataSent);
-            });
-        } catch (Exception ex) {
-            Log.e(LOG_TAG, "Unable to connect websocket: " + ex.getMessage());
-            this.setState(MainActivityState.CONNECTION_ERROR);
-            this.printUIDebugInfo("Error Connecting Websocket:", ex.getMessage());
+    private final ActivityResultLauncher<Void> btControllerSelectionLauncher = registerForActivityResult(new BTLEControllerContract(), (controllerAddrMac) -> {
+        Log.i(LOG_TAG, "Received Controller Mac : " + controllerAddrMac);
+        if (controllerAddrMac != null) {
+            this.renderFromState();
+            // Init bluetooth management
+            LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+            app.getBluetoothCtrlMgr().open(this, controllerAddrMac);
         }
-    }
-
-    private void statCapturingPictures() {
-        this.setState(MainActivityState.RUNNING);
-        LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
-        try {
-            app.getCameraManager().open();
-        } catch (Exception ex) {
-            Log.e(LOG_TAG, "Error taking picture: " + ex.getMessage());
-            this.setState(MainActivityState.RUNNING_ERROR);
-            this.printUIDebugInfo("Error starting taking picture: " + ex.getMessage());
-        }
-    }
-
-    private void handleDataSent(Object dataSent) {
-        if (dataSent instanceof PictureSnapshot) {
-            PictureSnapshot ps = (PictureSnapshot) dataSent;
-            if (ps.getSource().equals(PictureSnapshot.CameraType.FRONT)) {
-                this.dataSentInfo.nbFrontPictureSnapshotsSent++;
-            } else if (ps.getSource().equals(PictureSnapshot.CameraType.BACK)) {
-                this.dataSentInfo.nbBackPictureSnapshotsSent++;
-            } else {
-                this.dataSentInfo.nbOtherDataSent++;
-            }
-        } else {
-            this.dataSentInfo.nbOtherDataSent++;
-        }
-        this.printUIDebugInfo("Information on data sent",
-                String.format(Locale.US, "- Front pictures: %d", this.dataSentInfo.nbFrontPictureSnapshotsSent),
-                String.format(Locale.US, "- Back pictures: %d", this.dataSentInfo.nbBackPictureSnapshotsSent),
-                String.format(Locale.US, "- Other data: %d", this.dataSentInfo.nbOtherDataSent));
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        if (requestCode == AppConstants.REQUEST_CODE_PERMISSIONS) {
-            if (this.allPermissionsGranted()) {
-                this.startWatching();
-            } else {
-                this.setState(MainActivityState.LAUNCH_ERROR_PERMISSION);
-            }
-        }
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-    }
-
-    private boolean allPermissionsGranted() {
-        for (String p : AppConstants.REQUIRED_PERMISSIONS) {
-            if (ContextCompat.checkSelfPermission(getBaseContext(), p) != PackageManager.PERMISSION_GRANTED) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean checkAndSetLemsUri() {
-        if (AppConstants.useWebSocketTestInfo) {
-            this.webSocketEndpoint = AppConstants.testWebSocketEndpointDebug;
-            this.webSocketJwt = AppConstants.testWebSocketJWT;
-            Log.d(LOG_TAG, "Launnch Data found. WebSocket is: " + this.webSocketEndpoint);
-            return true;
-        }
-        Intent intent = this.getIntent();
-        Uri data = intent.getData();
-        try {
-            this.setSocketInfoFromUri(data);
-            Log.d(LOG_TAG, "Launnch Data found. WebSocket is: " + this.webSocketEndpoint);
-            return true;
-        } catch (IllegalArgumentException ex) {
-            Log.i(LOG_TAG, ex.getMessage());
-            return false;
-        }
-    }
+    });
 
     private void setSocketInfoFromUri(Uri uri) {
         if (uri == null) {
             throw new IllegalArgumentException("Missing uri");
         }
         String urlEncodedEndpoint = uri.getQueryParameter("endpoint");
-        String rawJwt = uri.getQueryParameter("jwt");
-        if (urlEncodedEndpoint == null || rawJwt == null) {
+        final String websocketJWT = uri.getQueryParameter("jwt");
+        final String websocketPath = uri.getQueryParameter("path");
+        if (urlEncodedEndpoint == null || websocketJWT == null) {
             throw new IllegalArgumentException("Missing launch data endpoint or jwt");
         }
-        this.webSocketEndpoint = Uri.decode(urlEncodedEndpoint);
-        this.webSocketJwt = rawJwt;
-    }
-
-    private final ActivityResultLauncher<Void> qrCodeReaderlauncher = registerForActivityResult(new ReadQrCodeContract(), (uri) -> {
-        Log.i(LOG_TAG, "1st activity : received uri! : " + uri);
-        if (uri != null) {
-            this.setState(MainActivityState.LAUNCHING);
-            this.setSocketInfoFromUri(uri);
-            this.checkPermissionAndStartWatching();
-        }
-    });
-
-    private void readQRCode() {
-        try {
-            this.qrCodeReaderlauncher.launch(null);
-        } catch (ActivityNotFoundException ex) {
-            Log.e(LOG_TAG, "Unable to start reading QR code: " + ex.getMessage());
+        final String websocketEndoint = Uri.decode(urlEncodedEndpoint);
+        // Init websocket connection
+        if (websocketEndoint != null && websocketJWT != null) {
+            LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+            app.getWebSocketManager().open(websocketEndoint, websocketJWT, websocketPath);
         }
     }
 
+    private void checkPermissions() {
+        if (!this.allPermissionsGranted()) {
+            ActivityCompat.requestPermissions(this, AppConstants.REQUIRED_PERMISSIONS, AppConstants.REQUEST_CODE_PERMISSIONS);
+        }
+    }
 
-    private void retryConnection() {
-        this.startWatching();
+    private boolean allPermissionsGranted() {
+        for (String p : AppConstants.REQUIRED_PERMISSIONS) {
+            Log.i(LOG_TAG, "PERM: " + p);
+            if (ContextCompat.checkSelfPermission(getBaseContext(), p) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        Log.i(LOG_TAG, "All permission allowed.");
+        this.cameraAllowed = true;
+        return true;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        if (requestCode == AppConstants.REQUEST_CODE_PERMISSIONS) {
+            if (! this.allPermissionsGranted()) {
+                this.cameraAllowed = false;
+            } else {
+                this.cameraAllowed = true;
+            }
+            this.renderFromState();
+        } else {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        }
+    }
+
+    @Override
+    public void onDeviceReady(String deviceName) {
+        this.renderFromState();
+    }
+
+    @Override
+    public void onControllChanged(boolean controlled) {
+        /*LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+        if (app.getBluetoothCtrlMgr().isControlled() && app.getCameraManager().isOpened()) {
+            this.stopWatching();
+        } else if (!app.getBluetoothCtrlMgr().isControlled() && !app.getCameraManager().isOpened()) {
+            this.startWatching();
+        }*/
+        this.renderFromState();
+    }
+
+    @Override
+    public void onCommandReceived(ControlOrder order) {
+
+    }
+
+    @Override
+    public void onConnect(Object[] info) {
+        this.renderFromState();
+    }
+
+    @Override
+    public void onDisconnect(Object[] info) {
+        String disconnectionMsg = "unknown";
+        if (info.length > 0 && info[0] != null) {
+            if (info[0] instanceof Exception) {
+                disconnectionMsg = ((Exception) info[0]).getMessage();
+            } else {
+                disconnectionMsg = info[0].toString();
+            }
+        }
+        Log.w(LOG_TAG, "Disconnected from websocket: " + disconnectionMsg);
+        this.stopWatching();
+        this.setDebugMessages("Websocket disconnected:", disconnectionMsg);
+        this.renderFromState();
+    }
+
+    @Override
+    public void onConnectError(Exception ex) {
+        final String errorMsg = ex == null ? "unknown" : ex.getMessage();
+        Log.e(LOG_TAG, "Disconnected from websocket: " + errorMsg);
+        this.onError = true;
+        this.stopWatching();
+        this.setDebugMessages("Websocket error:", errorMsg);
+        this.renderFromState();
+    }
+
+    @Override
+    public void onDataSent(String eventType, Object data) {
+        if (WebSocketEventTypes.PICTURE_SNAPSHOT_EVENT_TYPE.equals(eventType)) {
+            PictureSnapshot ps = (PictureSnapshot) data;
+            if (ps.getSource().equals(PictureSnapshot.CameraType.FRONT)) {
+                this.dataSentInfo.nbFrontPictureSnapshotsSent++;
+                this.dataSentInfo.lastFrontDataSize = ps.getData().length / 1000F;
+            } else if (ps.getSource().equals(PictureSnapshot.CameraType.BACK)) {
+                this.dataSentInfo.nbBackPictureSnapshotsSent++;
+                this.dataSentInfo.lastBackDataSize = ps.getData().length / 1000F;
+            } else {
+                this.dataSentInfo.nbOtherDataSent++;
+            }
+        } else {
+            this.dataSentInfo.nbOtherDataSent++;
+        }
+        this.setDebugMessages("Information on data sent",
+                this.dataSentInfo.lastFrontDataSize == null ?
+                        String.format(Locale.US, "- Front pictures: %d",
+                                this.dataSentInfo.nbFrontPictureSnapshotsSent) :
+                        String.format(Locale.US, "- Front pictures: %d (last size: %.2f kB)",
+                                this.dataSentInfo.nbFrontPictureSnapshotsSent, this.dataSentInfo.lastFrontDataSize),
+                this.dataSentInfo.lastFrontDataSize == null ?
+                        String.format(Locale.US, "- Back pictures: %d",
+                                this.dataSentInfo.nbBackPictureSnapshotsSent) :
+                        String.format(Locale.US, "- Back pictures: %d (last size: %.2f kB)",
+                                this.dataSentInfo.nbBackPictureSnapshotsSent, this.dataSentInfo.lastBackDataSize),
+                String.format(Locale.US, "- Other data: %d", this.dataSentInfo.nbOtherDataSent));
+        this.renderFromState();
     }
 
     private static class WSDataSentInfo {
         public int nbFrontPictureSnapshotsSent = 0;
         public int nbBackPictureSnapshotsSent = 0;
         public int nbOtherDataSent = 0;
+        public Float lastFrontDataSize = null;
+        public Float lastBackDataSize = null;
     }
 }

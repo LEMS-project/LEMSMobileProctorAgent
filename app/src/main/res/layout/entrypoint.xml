@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    tools:context=".OLDMainActivity">
 
     <TextView
         android:id="@+id/txtMainInfo"
@@ -28,7 +28,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
         android:text="@string/btn_take_qrcode"
-        app:layout_constraintBottom_toTopOf="@+id/btnRetryConnection"
+        app:layout_constraintBottom_toTopOf="@+id/btnConnect"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
@@ -55,13 +55,57 @@
         app:srcCompat="@drawable/ic_starting" />
 
     <Button
-        android:id="@+id/btnRetryConnection"
+        android:id="@+id/btnConnect"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:text="@string/btn_retry_connection"
-        app:layout_constraintBottom_toBottomOf="parent"
+        android:text="@string/btn_connect"
+        app:layout_constraintBottom_toTopOf="@+id/btnTestLayout"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
+
+    <Button
+        android:id="@+id/btnBTControllerSelect"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="@string/btn_select_bt_controller"
+        app:layout_constraintBottom_toTopOf="@+id/btnTakeQRCode"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <LinearLayout
+        android:id="@+id/btnTestLayout"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <Button
+            android:id="@+id/btnTestUp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="UP" />
+
+        <Button
+            android:id="@+id/btnTestDown"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DOWN" />
+
+        <Button
+            android:id="@+id/btnTestRight"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="RIGHT" />
+
+        <Button
+            android:id="@+id/btnTestLeft"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LEFT" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

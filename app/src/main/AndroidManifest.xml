@@ -3,9 +3,30 @@
     package="lems.mobileProctorAgent">
 
     <uses-feature android:name="android.hardware.camera.any" />
+    <uses-feature
+        android:name="android.hardware.bluetooth"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false" />
+    <uses-feature android:name="android.software.companion_device_setup" />
 
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.INTERNET" /> <!-- BLUETOOTH PERMISSIONS (Optional -->
+    <!-- Request legacy Bluetooth permissions on older devices. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" /> <!-- Bluetooth is used to scan devices and connect to them. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <application
         android:name=".LEMSMobileProcotorAgentApplication"
@@ -18,27 +39,27 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LEMSMobileProctorAgent">
         <activity
-            android:name=".QRCodeReaderActivity"
-            android:exported="false" />
-        <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <intent-filter android:label="@string/filter_view_lems">
                 <action android:name="android.intent.action.VIEW" />
-
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-
                 <data
                     android:host="proctoring"
                     android:scheme="lems" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".bluetooth.BTLEControllerSelectionActivity"
+            android:exported="false" />
+        <activity
+            android:name=".qrcodeReader.QRCodeReaderActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

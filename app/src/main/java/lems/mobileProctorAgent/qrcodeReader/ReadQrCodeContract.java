@@ -1,4 +1,4 @@
-package lems.mobileProctorAgent;
+package lems.mobileProctorAgent.qrcodeReader;
 
 import android.app.Activity;
 import android.content.Context;
@@ -10,7 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 public class ReadQrCodeContract extends ActivityResultContract<Void, Uri> {
-    public final static String QRCODE_URI = "lems.mobileProctorAgent.ReadQrCodeContract.QRCODE_URI";
+    public final static String QRCODE_URI = "lems.mobileProctorAgent.qrcodeReader.ReadQrCodeContract.QRCODE_URI";
 
     @NonNull
     @Override
