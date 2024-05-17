@@ -8,19 +8,32 @@ import com.google.gson.GsonBuilder;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 import io.socket.client.IO;
 import io.socket.client.Socket;
-import io.socket.client.SocketOptionBuilder;
+//import io.socket.client.SocketOptionBuilder;
 import io.socket.emitter.Emitter;
 import io.socket.engineio.client.EngineIOException;
+import io.socket.engineio.client.transports.Polling;
+import io.socket.engineio.client.transports.WebSocket;
 import lems.mobileProctorAgent.model.ControlInfo;
 import lems.mobileProctorAgent.model.ControlOrder;
 import lems.mobileProctorAgent.model.PictureSnapshot;
 import lems.mobileProctorAgent.model.WebSocketEventTypes;
+import okhttp3.OkHttpClient;
 
 public class WebsocketManager implements AutoCloseable {
     private final static String LOG_TAG = WebsocketManager.class.getName();
@@ -31,6 +44,7 @@ public class WebsocketManager implements AutoCloseable {
     private boolean connecting;
     private String endpoint;
     private Socket websocket;
+    private Map<String, String> authenticator;
 
 
     public WebsocketManager() {
@@ -62,20 +76,63 @@ public class WebsocketManager implements AutoCloseable {
         this.deviceControlListeners.remove(listener);
     }
 
+    private void updateSockOptionOnHttps(String wsEndpoint, IO.Options sockOptions) {
+        final String wsEndpointLowerCase = wsEndpoint.toLowerCase();
+        if (wsEndpointLowerCase.startsWith("https") || wsEndpointLowerCase.startsWith("wss")) {
+            Log.i(LOG_TAG, "Set TLS for ws options");
+            try {
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(null, new TrustManager[]{trustManager}, null);
+
+                OkHttpClient okHttpClient = new OkHttpClient.Builder()
+                        .hostnameVerifier(hostnameVerifier)
+                        .sslSocketFactory(sslContext.getSocketFactory(), trustManager)
+                        .readTimeout(1, TimeUnit.MINUTES) // important for HTTP long-polling
+                        .build();
+
+                sockOptions.callFactory = okHttpClient;
+                sockOptions.webSocketFactory = okHttpClient;
+            } catch (NoSuchAlgorithmException | KeyManagementException ex) {
+                Log.w(LOG_TAG, "Cannot set websocket options for TLS: " + ex.getMessage());
+            }
+        }
+    }
+
     public void open(String wsEndpoint, String jwt, String wsPath) {
         if (this.websocket != null) {
             this.close();
         }
-        Map<String, String> authOption = new HashMap<>();
-        authOption.put("jwt", jwt);
-        SocketOptionBuilder builder = IO.Options.builder()
-                .setReconnectionAttempts(1)
+
+        // DEBUT VERSION CLIENT 2
+        /*Map<String, String> authOption = new HashMap<>();
+        authOption.put("jwt", jwt);*/
+        /*SocketOptionBuilder builder = IO.Options.builder()
+                .setReconnectionAttempts(1);
+                //.setTransports(new String[] { WebSocket.NAME, Polling.NAME })
                 .setAuth(authOption);
         if (wsPath != null) {
             builder.setPath(wsPath);
         }
         IO.Options sockOptions = builder.build();
+        this.updateSockOptionOnHttps(wsEndpoint, sockOptions);*/
+        // FIN VERSION CLIENT 2
+
+        // DEBUT VERSION CLIENT 1
+        this.authenticator = new HashMap<>();
+        Log.d(LOG_TAG, "Create authenticator with jwt " + jwt.toString());
+        this.authenticator.put("jwt", jwt);
+        IO.Options sockOptions = new IO.Options();
+        sockOptions.reconnectionAttempts = 1;
+        sockOptions.transports = new String[] { WebSocket.NAME, Polling.NAME};
+        //Log.w(LOG_TAG, "Raw jwt " + jwt);
+        //sockOptions.query = String.format("{\"jwt\": \"%s\"}", jwt);
+        //Log.w(LOG_TAG, "Prepare query " + sockOptions.query);
+        sockOptions.path = wsPath;
+        // this.updateSockOptionOnHttps(wsEndpoint, sockOptions);
+        // FIN VERSION CLIENT 1
+
         try {
+            Log.w(LOG_TAG, "Connect to websocket with endpoint " + wsEndpoint + " and path " + wsPath);
             this.connecting = true;
             this.endpoint = wsEndpoint;
             this.websocket = IO.socket(wsEndpoint, sockOptions);
@@ -155,6 +212,13 @@ public class WebsocketManager implements AutoCloseable {
             Log.d(LOG_TAG, "Websocket connected");
             connecting = false;
             websocketListeners.forEach((l) -> l.onConnect(args));
+            Log.d(LOG_TAG, "Authenticate Websocket with authenticator " + authenticator.toString());
+            try {
+                final JSONObject jsonObject = new JSONObject(jsonConverter.toJson(authenticator));
+                websocket.emit("authenticate", jsonObject);
+            } catch (JSONException ex) {
+                Log.e(LOG_TAG, "Cannot convert authenticator to json");
+            }
         }
     };
 
@@ -222,6 +286,7 @@ public class WebsocketManager implements AutoCloseable {
     private final Emitter.Listener intOnControlCommand = new Emitter.Listener() {
         @Override
         public void call(Object... args) {
+            Log.d(LOG_TAG, "Recevied control command");
             if (args.length == 0 || ! (args[0] instanceof JSONObject)) {
                 Log.d(LOG_TAG, "No Control info");
                 return;
@@ -231,7 +296,31 @@ public class WebsocketManager implements AutoCloseable {
                 Log.d(LOG_TAG, "Unmanaged command: " + co.getCode());
                 return;
             }
+
             deviceControlListeners.forEach((l) -> l.onControlOrder(co));
+        }
+    };
+
+    private final static HostnameVerifier hostnameVerifier = new HostnameVerifier() {
+        @Override
+        public boolean verify(String hostname, SSLSession sslSession) {
+            return true;
+        }
+    };
+
+    private final static X509TrustManager trustManager = new X509TrustManager() {
+        public X509Certificate[] getAcceptedIssuers() {
+            return new X509Certificate[] {};
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] arg0, String arg1) {
+            // not implemented
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] arg0, String arg1) {
+            // not implemented
         }
     };
 }

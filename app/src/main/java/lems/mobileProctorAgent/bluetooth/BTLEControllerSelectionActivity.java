@@ -4,9 +4,12 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import android.Manifest;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -66,6 +69,9 @@ public class BTLEControllerSelectionActivity extends AppCompatActivity {
             Toast.makeText(this, R.string.ble_not_supported, Toast.LENGTH_SHORT).show();
             finish();
         }
+
+        //Check permissions
+        this.checkPermissions();
 
         // Initializes a Bluetooth adapter.  For API level 18 and above, get a reference to
         // BluetoothAdapter through BluetoothManager.
@@ -236,6 +242,34 @@ public class BTLEControllerSelectionActivity extends AppCompatActivity {
         }
 
     };
+
+    private void checkPermissions() {
+        if (!this.allBTPermissionsGranted()) {
+            ActivityCompat.requestPermissions(this, AppConstants.BT_PERMISSIONS, AppConstants.REQUEST_CODE_BT_PERMISSIONS);
+        }
+    }
+
+    private boolean allBTPermissionsGranted() {
+        for (String p : AppConstants.BT_PERMISSIONS) {
+            Log.i(LOG_TAG, "PERM: " + p);
+            if (ContextCompat.checkSelfPermission(getBaseContext(), p) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        Log.i(LOG_TAG, "All BT permission allowed.");
+        return true;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        if (requestCode == AppConstants.REQUEST_CODE_BT_PERMISSIONS) {
+            if (! this.allBTPermissionsGranted()) {
+                finish();
+            }
+        } else {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        }
+    }
 
     private void onDeviceFound(String deviceMacAddress) {
         this.setResult(RESULT_OK, BTLEControllerContract.createReturnedIntent(deviceMacAddress));

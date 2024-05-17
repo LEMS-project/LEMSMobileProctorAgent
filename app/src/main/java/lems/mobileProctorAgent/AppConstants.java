@@ -14,7 +14,7 @@ public interface AppConstants {
 
     String BT_GATT_SERVICE = "19B10000-E8F2-537E-4F6C-D104768A1214";
 
-    boolean useWebSocketTestInfo = true;
+    boolean useWebSocketTestInfo = false;
     String testWebSocketEndpointDebug = "http://192.168.2.24:5555/mobile"; // "http://10.0.2.2:5000/mobile";
     String testWebSocketJWT = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VybmFtZSI6IlJcdTAwZTltaSIsImV4cCI6MTY0NDM5ODUzMX0.vv39ZmcBE-uWxCySYvpZmyFsaeNl5MvLcKdV5ETFWAE";
 

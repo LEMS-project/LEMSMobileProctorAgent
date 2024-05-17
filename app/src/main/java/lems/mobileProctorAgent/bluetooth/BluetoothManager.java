@@ -15,6 +15,9 @@ import androidx.activity.ComponentActivity;
 import java.util.ArrayList;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import lems.mobileProctorAgent.AppConstants;
 import lems.mobileProctorAgent.model.ControlInfo;
@@ -38,13 +41,15 @@ public class BluetoothManager implements DeviceControlListener, AutoCloseable {
 
     boolean controlled;
 
+    ScheduledFuture futurResetPitch;
+
     public BluetoothManager(ScheduledExecutorService executorService) {
         this.executorService = executorService;
         this.btManagerListeners = new ArrayList<>();
         this.ready = false;
     }
 
-    public void open(ComponentActivity context, String controllerAddrMac) {
+    public void open(ComponentActivity context, String controllerAddrMac) throws SecurityException {
         this.ready = false;
         this.init(context);
         final BluetoothDevice connectingDevice = this.bluetoothAdapter.getRemoteDevice(controllerAddrMac);
@@ -92,7 +97,7 @@ public class BluetoothManager implements DeviceControlListener, AutoCloseable {
         }
     }
 
-    public void sendControlOrder(ControlOrder order) {
+    public void sendControlOrder(ControlOrder order) throws SecurityException {
         if (!this.ready) {
             Log.w(LOG_TAG,"Cannot send control order, manager not opened");
             return;
@@ -103,8 +108,20 @@ public class BluetoothManager implements DeviceControlListener, AutoCloseable {
         }
 
         final byte[] command = BluetoothCommandUtils.computeMoveOrderMessage(order.getRotation(), order.getPitch());
-        this.characteristic.setValue(command);
-        boolean res  = this.bluetoothGatt.writeCharacteristic(this.characteristic);
+        boolean res = false;
+        synchronized (this) {
+            if (this.futurResetPitch != null) {
+                this.futurResetPitch.cancel(true);
+                this.futurResetPitch = null;
+            }
+            this.characteristic.setValue(command);
+            res  = this.bluetoothGatt.writeCharacteristic(this.characteristic);
+            // Send stop pitch order in 200ms if required
+            if (order.getPitch() != 0) {
+                this.futurResetPitch = this.executorService.schedule(
+                        new PitchReseter(order.getRotation()), 200, TimeUnit.MILLISECONDS);
+            }
+        }
         Log.i(LOG_TAG, "Command sent: " + res);
 
         /*final BluetoothGatt gatt = this.bluetoothGatt;
@@ -115,6 +132,20 @@ public class BluetoothManager implements DeviceControlListener, AutoCloseable {
             boolean res  = gatt.writeCharacteristic(charac);
             Log.i(LOG_TAG, "Command sent: " + res);
         });*/
+    }
+
+    public void startAutoRotate() {
+        ControlOrder order = new ControlOrder(ControlOrder.ControlerOrderCode.MOVE);
+        order.setRotation(1);
+        order.setPitch(0);
+        this.sendControlOrder(order);
+    }
+
+    public void stopAutoRotate() {
+        ControlOrder order = new ControlOrder(ControlOrder.ControlerOrderCode.MOVE);
+        order.setRotation(0);
+        order.setPitch(0);
+        this.sendControlOrder(order);
     }
 
     @Override
@@ -166,7 +197,7 @@ public class BluetoothManager implements DeviceControlListener, AutoCloseable {
 
     private final BluetoothGattCallback bluetoothGattCallback = new BluetoothGattCallback() {
         @Override
-        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) throws SecurityException {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 // successfully connected to the GATT Server
                 Log.i(LOG_TAG, "GATT Connection change for connected");
@@ -191,7 +222,7 @@ public class BluetoothManager implements DeviceControlListener, AutoCloseable {
         }
     };
 
-    private void retrieveServiceAndCharacteristic() {
+    private void retrieveServiceAndCharacteristic() throws SecurityException {
         BluetoothGattService svc = this.bluetoothGatt.getService(UUID.fromString(AppConstants.BT_GATT_SERVICE));
         if (svc == null) {
             Log.w(LOG_TAG, "Cannot get service");
@@ -213,5 +244,27 @@ public class BluetoothManager implements DeviceControlListener, AutoCloseable {
         btManagerListeners.forEach((l) -> l.onDeviceReady(this.bluetoothDeviceName));
     }
 
+    private class PitchReseter implements Runnable {
+        private final int lastRotation;
+
+        public PitchReseter(int lastRotation) {
+            this.lastRotation = lastRotation;
+        }
+
+        @Override
+        public void run() {
+            final byte[] command = BluetoothCommandUtils.computeMoveOrderMessage(this.lastRotation, 0);
+            boolean res = false;
+            synchronized (BluetoothManager.this) {
+                try {
+                    characteristic.setValue(command);
+                    res = bluetoothGatt.writeCharacteristic(characteristic);
+                } catch (SecurityException ex){
+
+                }
+            }
+            Log.i(LOG_TAG, "Reset Pitch sent: " + res);
+        }
+    }
 
 }

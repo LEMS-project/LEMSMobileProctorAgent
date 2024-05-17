@@ -21,6 +21,7 @@ import android.widget.TextView;
 import java.util.Locale;
 
 import lems.mobileProctorAgent.bluetooth.BTLEControllerContract;
+import lems.mobileProctorAgent.bluetooth.BluetoothManager;
 import lems.mobileProctorAgent.bluetooth.BluetoothManagerListener;
 import lems.mobileProctorAgent.model.ControlOrder;
 import lems.mobileProctorAgent.model.PictureSnapshot;
@@ -52,6 +53,7 @@ public class MainActivity extends AppCompatActivity implements BluetoothManagerL
         });
         this.findViewById(R.id.connectControl).setOnClickListener((v) -> {
             this.startWatching();
+            this.startAutoRotatingDevice();
         });
         this.findViewById(R.id.btSelectControl).setOnClickListener((v) -> {
             try {
@@ -96,6 +98,7 @@ public class MainActivity extends AppCompatActivity implements BluetoothManagerL
 
     @Override
     protected void onStop() {
+        this.stopAutoRotatingDevice();
         super.onStop();
         //LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
         //app.closeAndQuit();
@@ -210,6 +213,22 @@ public class MainActivity extends AppCompatActivity implements BluetoothManagerL
         this.renderFromState();
     }
 
+    private void startAutoRotatingDevice() {
+        LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+        BluetoothManager btMgr = app.getBluetoothCtrlMgr();
+        if (btMgr != null && btMgr.isOpened()) {
+            btMgr.startAutoRotate();
+        }
+    }
+
+    private void stopAutoRotatingDevice() {
+        LEMSMobileProcotorAgentApplication app = (LEMSMobileProcotorAgentApplication) getApplication();
+        BluetoothManager btMgr = app.getBluetoothCtrlMgr();
+        if (btMgr != null && btMgr.isOpened()) {
+            btMgr.stopAutoRotate();
+        }
+    }
+
     private void setDebugMessages(Object... messages) {
         this.debugMessages = null;
         final StringBuilder strBuilder = new StringBuilder();
@@ -302,12 +321,22 @@ public class MainActivity extends AppCompatActivity implements BluetoothManagerL
         } else if (!app.getBluetoothCtrlMgr().isControlled() && !app.getCameraManager().isOpened()) {
             this.startWatching();
         }*/
-        this.renderFromState();
+        /*if (controlled) {
+            this.stopAutoRotatingDevice();
+        } else {
+            this.startAutoRotatingDevice();
+        }
+        this.renderFromState();*/
     }
 
     @Override
     public void onCommandReceived(ControlOrder order) {
-
+        if (order.getCode() == ControlOrder.ControlerOrderCode.LOCK) {
+            this.stopAutoRotatingDevice();
+        } else if (order.getCode() == ControlOrder.ControlerOrderCode.UNLOCK) {
+            this.startAutoRotatingDevice();
+        }
+        this.renderFromState();
     }
 
     @Override
